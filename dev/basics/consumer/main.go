@@ -1,24 +1,4 @@
-// Example function-based high-level Apache Kafka consumer
 package main
-
-/**
- * Copyright 2016 Confluent Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-// consumer_example implements a consumer using the non-channel Poll() API
-// to retrieve messages and events.
 
 import (
 	"fmt"
@@ -26,56 +6,74 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	//	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 )
 
 func main() {
-
-	if len(os.Args) < 4 {
-		log.Printf("Usage: %s <broker> <group> <topics..>\n",
-			os.Args[0])
-		os.Exit(1)
+	if len(os.Args) < 5 {
+		log.Fatalf("%s <broker> <group> <hostname> <topics..>\n", os.Args[0])
 	}
 
 	broker := os.Args[1]
 	group := os.Args[2]
-	topics := os.Args[3:]
+	hostname := os.Args[3]
+	topics := os.Args[4:]
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
-	c, err := kafka.NewConsumer(&kafka.ConfigMap{
+	var err error
+
+	if hostname == "" {
+		hostname, err = os.Hostname()
+		if err != nil {
+			log.Fatalf("look up hostname: %v\n", err)
+		}
+	}
+
+	groupID := "consumer-" + group
+	instanceID := groupID + "-" + hostname
+
+	cfg := &kafka.ConfigMap{
 		// General
-		"bootstrap.servers":  broker,
-		"client.id":          "consumer-example",
-		"session.timeout.ms": 10_000,
+		"bootstrap.servers": broker,
+		"client.id":         instanceID,
 
 		// Consumer
-		"group.id":                        group,
+		"group.id":                        groupID,
+		"group.instance.id":               instanceID,
 		"go.application.rebalance.enable": true,
 		"enable.partition.eof":            true,
 		"auto.offset.reset":               "earliest",
-		"enable.auto.commit":              false,
-		"isolation.level":                 "read_committed",
-	})
-
-	if err != nil {
-		log.Printf("Failed to create consumer: %s\n", err)
-		os.Exit(1)
+		//		"enable.auto.commit":              false,
+		"isolation.level": "read_committed",
 	}
 
-	log.Printf("Created Consumer %v\n", c)
+	c, err := kafka.NewConsumer(cfg)
+
+	if err != nil {
+		log.Fatalf("create consumer: %v\n", err)
+	}
 
 	err = c.SubscribeTopics(topics, nil)
+
+	msgCount := 0
+	msgCountPrev := 0
+	showLog := time.Tick(time.Second)
 
 	run := true
 	for run == true {
 
 		select {
 		case sig := <-sigchan:
-			fmt.Printf("Caught signal %v: terminating\n", sig)
+			fmt.Printf("signal %v: terminating\n", sig)
 			run = false
+
+		case <-showLog:
+			log.Printf("messages/s %d\n", (msgCount - msgCountPrev))
+			msgCountPrev = msgCount
+
 		default:
 			ev := c.Poll(100)
 			if ev == nil {
@@ -84,34 +82,31 @@ func main() {
 
 			switch e := ev.(type) {
 			case *kafka.Message:
-				log.Printf("%% Message on %s: %s\n", e.TopicPartition, string(e.Value))
-				if e.Headers != nil {
-					log.Printf("%% Headers: %v\n", e.Headers)
-				}
+				msgCount++
 			case kafka.AssignedPartitions:
-				log.Printf("%% %v\n", e)
+				log.Printf("%v\n", e)
 				c.Assign(e.Partitions)
 			case kafka.RevokedPartitions:
-				log.Printf("%% %v\n", e)
+				log.Printf("%v\n", e)
 				c.Unassign()
 			case kafka.PartitionEOF:
-				log.Printf("%% Reached %v\n", e)
+				//				log.Printf("%v\n", e)
 			case kafka.Error:
-				// Errors should generally be considered
-				// informational, the client will try to
-				// automatically recover.
-				// But in this example we choose to terminate
-				// the application if all brokers are down.
-				log.Printf("%% Error: %v: %v\n", e.Code(), e)
-				if e.Code() == kafka.ErrAllBrokersDown {
+				log.Printf("error: %v\n", e)
+				if e.IsFatal() {
 					run = false
 				}
 			default:
-				fmt.Printf("Ignored %v\n", e)
+				fmt.Printf("ignored: %v\n", e)
 			}
 		}
 	}
 
-	fmt.Printf("Closing consumer\n")
+	fatalErr := c.GetFatalError()
+
 	c.Close()
+
+	if fatalErr != nil {
+		os.Exit(1)
+	}
 }

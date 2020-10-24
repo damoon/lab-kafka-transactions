@@ -10,16 +10,5 @@ services:
       - "9092:9092"
     environment:
       KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
-#      KAFKA_CREATE_TOPICS: "test:1:1"
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
       KAFKA_CREATE_TOPICS: "topic1:4:1,topic2:4:1,topic3:4:1:compact"
-
-#      HOSTNAME_COMMAND: "docker info | grep ^Name: | cut -d' ' -f 2"
-#      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-#      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
-#      KAFKA_ADVERTISED_LISTENERS: INSIDE://:9092,OUTSIDE://_{HOSTNAME_COMMAND}:9094
-#      KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9094
-#      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
-#    volumes:
-#      - /var/run/docker.sock:/var/run/docker.sock
