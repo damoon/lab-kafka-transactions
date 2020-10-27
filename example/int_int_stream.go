@@ -7,10 +7,14 @@ package example
 import (
 	"log"
 	"sync"
+	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // IntIntStream computes on a stream of key (Int) value (Int) messages.
 type IntIntStream struct {
+	app      *StreamingApplication
 	ch       <-chan IntIntMsg
 	commitCh <-chan interface{}
 }
@@ -238,11 +242,75 @@ func (s IntIntStream) SelectKey(k func(m IntIntMsg) int) IntIntStream {
 	return s.Process(task)
 }
 
+// StreamIntIntTopic subscribes to a topic and streams its messages.
+func (s *StreamingApplication) StreamIntIntTopic(topicName string, keyDecoder func(k []byte) int, valueDecoder func(v []byte) int) IntIntStream {
+	kafkaMsgCh := make(chan kafka.Message, channelCap)
+	commitCh := make(chan interface{}, 1)
+	topic := topic{
+		ch:       kafkaMsgCh,
+		commitCh: commitCh,
+	}
+	s.subscriptions[topicName] = topic
+
+	ch := make(chan IntIntMsg, channelCap)
+	stream := IntIntStream{
+		app:      s,
+		ch:       ch,
+		commitCh: commitCh,
+	}
+
+	return stream
+}
+
+// WriteTo persists messages to a kafka topic.
+func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) []byte, valueEncoder func(v int) []byte) *StreamingApplication {
+
+	task := func(m IntIntMsg) {
+	produce:
+		err := s.app.producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &topicName,
+				Partition: kafka.PartitionAny,
+			},
+			Key:   keyEncoder(m.Key),
+			Value: valueEncoder(m.Value),
+		}, nil)
+		if err != nil {
+			if err.(kafka.Error).IsFatal() {
+				log.Fatalf("fatal error: produce message: %v", err)
+			}
+
+			log.Printf("produce message: %v", err)
+			time.Sleep(10 * time.Millisecond)
+			goto produce
+		}
+	}
+
+	go func() {
+		for {
+			select {
+			case msg := <-s.ch:
+				task(msg)
+
+			case <-s.commitCh:
+				for len(s.ch) > 0 {
+					msg := <-s.ch
+					task(msg)
+				}
+				s.app.commits <- struct{}{}
+			}
+		}
+	}()
+
+	return s.app
+}
+
 // Process executes the task and creates a new stream.
-func (s IntIntStream) Process(t func(ch chan IntIntMsg, m IntIntMsg)) IntIntStream {
+func (s IntIntStream) Process(task func(ch chan IntIntMsg, m IntIntMsg)) IntIntStream {
 	ch := make(chan IntIntMsg, cap(s.ch))
 	commitCh := make(chan interface{}, 1)
 	stream := IntIntStream{
+		app:      s.app,
 		ch:       ch,
 		commitCh: commitCh,
 	}
@@ -251,12 +319,12 @@ func (s IntIntStream) Process(t func(ch chan IntIntMsg, m IntIntMsg)) IntIntStre
 		for {
 			select {
 			case msg := <-s.ch:
-				t(ch, msg)
+				task(ch, msg)
 
 			case _, ok := <-s.commitCh:
 				for len(s.ch) > 0 {
 					msg := <-s.ch
-					t(ch, msg)
+					task(ch, msg)
 				}
 				commitCh <- struct{}{}
 

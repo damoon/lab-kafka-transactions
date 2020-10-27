@@ -3,8 +3,10 @@ package streams
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/cheekybits/genny/generic"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // KeyType is the type for keys of messages. This will be replaced by genny.
@@ -15,7 +17,7 @@ type ValueType generic.Type
 
 // KeyTypeValueTypeStream computes on a stream of key (KeyType) value (ValueType) messages.
 type KeyTypeValueTypeStream struct {
-	app: 
+	app      *StreamingApplication
 	ch       <-chan KeyTypeValueTypeMsg
 	commitCh <-chan interface{}
 }
@@ -243,29 +245,71 @@ func (s KeyTypeValueTypeStream) SelectKey(k func(m KeyTypeValueTypeMsg) KeyType)
 	return s.Process(task)
 }
 
-// WriteTo persists messages to a kafka topic.
-func (s KeyTypeValueTypeStream) WriteTo(topicName string) {
-
-	task := func(ch chan IntIntMsg, msg IntIntMsg) {
-		msg.Value = m(msg.Value)
-		ch <- msg
-	}
-
-	return s.Process(task)
-
-	ch := make(chan KafkaMsg, channelCap)
+// StreamKeyTypeValueTypeTopic subscribes to a topic and streams its messages.
+func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string, keyDecoder func(k []byte) KeyType, valueDecoder func(v []byte) ValueType) KeyTypeValueTypeStream {
+	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
-	stream := Topic{
+	topic := topic{
+		ch:       kafkaMsgCh,
+		commitCh: commitCh,
+	}
+	s.subscriptions[topicName] = topic
+
+	ch := make(chan KeyTypeValueTypeMsg, channelCap)
+	stream := KeyTypeValueTypeStream{
+		app:      s,
 		ch:       ch,
 		commitCh: commitCh,
 	}
 
-	s.subscriptions[topicName] = stream
 	return stream
 }
 
+// WriteTo persists messages to a kafka topic.
+func (s KeyTypeValueTypeStream) WriteTo(topicName string, keyEncoder func(k KeyType) []byte, valueEncoder func(v ValueType) []byte) *StreamingApplication {
+
+	task := func(m KeyTypeValueTypeMsg) {
+	produce:
+		err := s.app.producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &topicName,
+				Partition: kafka.PartitionAny,
+			},
+			Key:   keyEncoder(m.Key),
+			Value: valueEncoder(m.Value),
+		}, nil)
+		if err != nil {
+			if err.(kafka.Error).IsFatal() {
+				log.Fatalf("fatal error: produce message: %v", err)
+			}
+
+			log.Printf("produce message: %v", err)
+			time.Sleep(10 * time.Millisecond)
+			goto produce
+		}
+	}
+
+	go func() {
+		for {
+			select {
+			case msg := <-s.ch:
+				task(msg)
+
+			case <-s.commitCh:
+				for len(s.ch) > 0 {
+					msg := <-s.ch
+					task(msg)
+				}
+				s.app.commits <- struct{}{}
+			}
+		}
+	}()
+
+	return s.app
+}
+
 // Process executes the task and creates a new stream.
-func (s KeyTypeValueTypeStream) Process(t func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg)) KeyTypeValueTypeStream {
+func (s KeyTypeValueTypeStream) Process(task func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg)) KeyTypeValueTypeStream {
 	ch := make(chan KeyTypeValueTypeMsg, cap(s.ch))
 	commitCh := make(chan interface{}, 1)
 	stream := KeyTypeValueTypeStream{
@@ -278,12 +322,12 @@ func (s KeyTypeValueTypeStream) Process(t func(ch chan KeyTypeValueTypeMsg, m Ke
 		for {
 			select {
 			case msg := <-s.ch:
-				t(ch, msg)
+				task(ch, msg)
 
 			case _, ok := <-s.commitCh:
 				for len(s.ch) > 0 {
 					msg := <-s.ch
-					t(ch, msg)
+					task(ch, msg)
 				}
 				commitCh <- struct{}{}
 

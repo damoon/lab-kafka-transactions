@@ -7,10 +7,14 @@ package example
 import (
 	"log"
 	"sync"
+	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // StringProductStream computes on a stream of key (String) value (Product) messages.
 type StringProductStream struct {
+	app      *StreamingApplication
 	ch       <-chan StringProductMsg
 	commitCh <-chan interface{}
 }
@@ -238,11 +242,75 @@ func (s StringProductStream) SelectKey(k func(m StringProductMsg) string) String
 	return s.Process(task)
 }
 
+// StreamStringProductTopic subscribes to a topic and streams its messages.
+func (s *StreamingApplication) StreamStringProductTopic(topicName string, keyDecoder func(k []byte) string, valueDecoder func(v []byte) Product) StringProductStream {
+	kafkaMsgCh := make(chan kafka.Message, channelCap)
+	commitCh := make(chan interface{}, 1)
+	topic := topic{
+		ch:       kafkaMsgCh,
+		commitCh: commitCh,
+	}
+	s.subscriptions[topicName] = topic
+
+	ch := make(chan StringProductMsg, channelCap)
+	stream := StringProductStream{
+		app:      s,
+		ch:       ch,
+		commitCh: commitCh,
+	}
+
+	return stream
+}
+
+// WriteTo persists messages to a kafka topic.
+func (s StringProductStream) WriteTo(topicName string, keyEncoder func(k string) []byte, valueEncoder func(v Product) []byte) *StreamingApplication {
+
+	task := func(m StringProductMsg) {
+	produce:
+		err := s.app.producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &topicName,
+				Partition: kafka.PartitionAny,
+			},
+			Key:   keyEncoder(m.Key),
+			Value: valueEncoder(m.Value),
+		}, nil)
+		if err != nil {
+			if err.(kafka.Error).IsFatal() {
+				log.Fatalf("fatal error: produce message: %v", err)
+			}
+
+			log.Printf("produce message: %v", err)
+			time.Sleep(10 * time.Millisecond)
+			goto produce
+		}
+	}
+
+	go func() {
+		for {
+			select {
+			case msg := <-s.ch:
+				task(msg)
+
+			case <-s.commitCh:
+				for len(s.ch) > 0 {
+					msg := <-s.ch
+					task(msg)
+				}
+				s.app.commits <- struct{}{}
+			}
+		}
+	}()
+
+	return s.app
+}
+
 // Process executes the task and creates a new stream.
-func (s StringProductStream) Process(t func(ch chan StringProductMsg, m StringProductMsg)) StringProductStream {
+func (s StringProductStream) Process(task func(ch chan StringProductMsg, m StringProductMsg)) StringProductStream {
 	ch := make(chan StringProductMsg, cap(s.ch))
 	commitCh := make(chan interface{}, 1)
 	stream := StringProductStream{
+		app:      s.app,
 		ch:       ch,
 		commitCh: commitCh,
 	}
@@ -251,12 +319,12 @@ func (s StringProductStream) Process(t func(ch chan StringProductMsg, m StringPr
 		for {
 			select {
 			case msg := <-s.ch:
-				t(ch, msg)
+				task(ch, msg)
 
 			case _, ok := <-s.commitCh:
 				for len(s.ch) > 0 {
 					msg := <-s.ch
-					t(ch, msg)
+					task(ch, msg)
 				}
 				commitCh <- struct{}{}
 

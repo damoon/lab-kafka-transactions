@@ -22,6 +22,9 @@ https://gitlab.com/utopia-planitia/hetznerctl/-/commit/86f6ebd9a277017404e91e5da
 
 SELECT * FROM https://kafka.apache.org/documentation/streams/developer-guide/dsl-api.html#window-final-results WHERE line LIKE '%Stream%'
 
+// TODO check out gorename
+// TODO check out mergol
+
 ## Stateless Transformations
 
  Branch                  KStream → KStream[]
