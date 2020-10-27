@@ -1,0 +1,9 @@
+
+syntax = "proto3";
+
+option go_package = "github.com/damoon/lab-kafka-transactions/example";
+
+message Product {
+    int64 price = 2;
+    string name = 6;
+}

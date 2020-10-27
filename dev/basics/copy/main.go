@@ -78,18 +78,6 @@ func stream() error {
 		"compression.codec":      "zstd",
 	}
 
-	c, err := kafka.NewConsumer(consumerConfig)
-	if err != nil {
-		return fmt.Errorf("create consumer: %s", err)
-	}
-
-	defer func() {
-		err := c.Close()
-		if err != nil {
-			fmt.Printf("close consumer: %v\n", err)
-		}
-	}()
-
 	p, err := kafka.NewProducer(producerConfig)
 	if err != nil {
 		return fmt.Errorf("create producer: %v", err)
@@ -99,15 +87,27 @@ func stream() error {
 		p.Close()
 	}()
 
+	err = initTransaction(p)
+	if err != nil {
+		return fmt.Errorf("init transactional producer: %v", err)
+	}
+
+	c, err := kafka.NewConsumer(consumerConfig)
+	if err != nil {
+		return fmt.Errorf("create consumer: %s", err)
+	}
+
 	err = c.SubscribeTopics(topics, nil)
 	if err != nil {
 		return fmt.Errorf("subscribe topics: %v", err)
 	}
 
-	err = initTransaction(p)
-	if err != nil {
-		return fmt.Errorf("init transactional producer: %v", err)
-	}
+	defer func() {
+		err := c.Close()
+		if err != nil {
+			fmt.Printf("close consumer: %v\n", err)
+		}
+	}()
 
 	err = copy(sigchan, target, topics, c, p)
 	if err != nil {

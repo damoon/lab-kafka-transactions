@@ -2,16 +2,6 @@ package streams
 
 import "strconv"
 
-type Stream struct {
-	ch       <-chan Msg
-	commitCh <-chan interface{}
-}
-
-type Msg struct {
-	Key   string
-	Value int
-}
-
 func RandomMsgs(count, cap int) Stream {
 	ch := make(chan Msg, cap)
 	stream := Stream{

@@ -3,19 +3,39 @@ package streams
 import (
 	"log"
 	"sync"
+
+	"github.com/cheekybits/genny/generic"
 )
 
-type Brancher = func(m Msg) int
+// KeyType is the type for keys of messages. This will be replaced by genny.
+type KeyType generic.Type
 
-func (s Stream) Branch(count int, b Brancher) []Stream {
-	chs := make([]chan Msg, count)
+// ValueType is the type for values of messages. This will be replaced by genny.
+type ValueType generic.Type
+
+// KeyTypeValueTypeStream computes on a stream of key (KeyType) value (ValueType) messages.
+type KeyTypeValueTypeStream struct {
+	app: 
+	ch       <-chan KeyTypeValueTypeMsg
+	commitCh <-chan interface{}
+}
+
+// KeyTypeValueTypeMsg is a key value pair send through the computation graph.
+type KeyTypeValueTypeMsg struct {
+	Key   KeyType
+	Value ValueType
+}
+
+// Branch splits the stream into count new branches. Idx selects routes messages between the streams.
+func (s KeyTypeValueTypeStream) Branch(count int, idx func(m KeyTypeValueTypeMsg) int) []KeyTypeValueTypeStream {
+	chs := make([]chan KeyTypeValueTypeMsg, count)
 	commitChs := make([]chan interface{}, count)
-	streams := make([]Stream, count)
+	streams := make([]KeyTypeValueTypeStream, count)
 
 	for i := 0; i < count; i++ {
-		chs[i] = make(chan Msg, cap(s.ch))
+		chs[i] = make(chan KeyTypeValueTypeMsg, cap(s.ch))
 		commitChs[i] = make(chan interface{}, 1)
-		streams[i] = Stream{
+		streams[i] = KeyTypeValueTypeStream{
 			ch:       chs[i],
 			commitCh: commitChs[i],
 		}
@@ -25,12 +45,12 @@ func (s Stream) Branch(count int, b Brancher) []Stream {
 		for {
 			select {
 			case msg := <-s.ch:
-				chs[b(msg)] <- msg
+				chs[idx(msg)] <- msg
 
 			case _, ok := <-s.commitCh:
 				for len(s.ch) > 0 {
 					msg := <-s.ch
-					chs[b(msg)] <- msg
+					chs[idx(msg)] <- msg
 				}
 
 				for i := 0; i < count; i++ {
@@ -51,109 +71,99 @@ func (s Stream) Branch(count int, b Brancher) []Stream {
 	return streams
 }
 
-type Filterer = func(m Msg) bool
-
-func (s Stream) Filter(f Filterer) Stream {
-	task := func(ch chan Msg, msg Msg) {
+// Filter keeps the messages with f(message) == True.
+func (s KeyTypeValueTypeStream) Filter(f func(m KeyTypeValueTypeMsg) bool) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
 		if f(msg) {
 			ch <- msg
 		}
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-func (s Stream) InverseFilter(f Filterer) Stream {
-	inverse := func(m Msg) bool {
+// InverseFilter keeps the messages with f(message) == False.
+func (s KeyTypeValueTypeStream) InverseFilter(f func(m KeyTypeValueTypeMsg) bool) KeyTypeValueTypeStream {
+	inverse := func(m KeyTypeValueTypeMsg) bool {
 		return !f(m)
 	}
 	return s.Filter(inverse)
 }
 
-type Emitter = func(Msg)
-
-type FlatMapper = func(m Msg, e Emitter)
-
-func (s Stream) FlatMap(f FlatMapper) Stream {
-	task := func(ch chan Msg, msg Msg) {
-		e := func(m Msg) {
-			ch <- msg
+// FlatMap creates 0-N messages per message.
+func (s KeyTypeValueTypeStream) FlatMap(f func(m KeyTypeValueTypeMsg, e func(KeyTypeValueTypeMsg))) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
+		e := func(m KeyTypeValueTypeMsg) {
+			ch <- m
 		}
 
 		f(msg, e)
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-type ValueEmitter = func(v int)
-
-type ValuesFlatMapper = func(v int, e ValueEmitter)
-
-func (s Stream) FlatMapValues(f ValuesFlatMapper) Stream {
-	task := func(ch chan Msg, msg Msg) {
-		e := func(v int) {
-			msg.Value = v
-			ch <- msg
+// FlatMapValues creates 0-N messages per message while keeping the key.
+func (s KeyTypeValueTypeStream) FlatMapValues(f func(v ValueType, e func(v ValueType))) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
+		e := func(v ValueType) {
+			m := KeyTypeValueTypeMsg{
+				Key:   msg.Key,
+				Value: v,
+			}
+			ch <- m
 		}
 
 		f(msg.Value, e)
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-type Foreacher = func(Msg)
-
-func (s Stream) Foreach(f Foreacher) {
-	task := func(ch chan Msg, msg Msg) {
+// Foreach executes f per messages. The function is terminal and blocks until completion.
+func (s KeyTypeValueTypeStream) Foreach(f func(KeyTypeValueTypeMsg)) {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
 		f(msg)
 	}
 
-	stream := s.process(task)
+	stream := s.Process(task)
 
-	// Foreach does not return a stream to be further processed.
-	// This loop terminates the accumulated commit messages.
-	go func() {
-		for range stream.commitCh {
-		}
-	}()
+	for range stream.commitCh {
+	}
 }
 
-type Mapper = func(m Msg) Msg
-
-func (s Stream) Map(m Mapper) Stream {
-	task := func(ch chan Msg, msg Msg) {
+// Map uses m to compute a new message per message.
+func (s KeyTypeValueTypeStream) Map(m func(m KeyTypeValueTypeMsg) KeyTypeValueTypeMsg) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
 		ch <- m(msg)
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-type ValuesMapper = func(m int) int
-
-func (s Stream) MapValues(m ValuesMapper) Stream {
-	task := func(ch chan Msg, msg Msg) {
+// MapValues uses m to compute new values for each message.
+func (s KeyTypeValueTypeStream) MapValues(m func(m ValueType) ValueType) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
 		msg.Value = m(msg.Value)
 		ch <- msg
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-func (s Stream) Merge(ss ...Stream) Stream {
-
-	ch := make(chan Msg, cap(s.ch))
+// Merge combines multiple streams into one.
+func (s KeyTypeValueTypeStream) Merge(ss ...KeyTypeValueTypeStream) KeyTypeValueTypeStream {
+	ch := make(chan KeyTypeValueTypeMsg, cap(s.ch))
 	commitCh := make(chan interface{}, 1)
 	streamsCount := len(ss) + 1
 	internalCommitCh := make(chan interface{}, streamsCount)
-	stream := Stream{
+	stream := KeyTypeValueTypeStream{
 		ch:       ch,
 		commitCh: commitCh,
 	}
 	wg := sync.WaitGroup{}
 
-	copy := func(s Stream) {
+	copy := func(s KeyTypeValueTypeStream) {
 		for {
 			select {
 			case msg := <-s.ch:
@@ -201,44 +211,65 @@ func (s Stream) Merge(ss ...Stream) Stream {
 	return stream
 }
 
-type Peeker = func(Msg)
-
-func (s Stream) Peek(p Peeker) Stream {
-	task := func(ch chan Msg, msg Msg) {
+// Peek executes p per message.
+func (s KeyTypeValueTypeStream) Peek(p func(KeyTypeValueTypeMsg)) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
 		p(msg)
 		ch <- msg
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-func (s Stream) Print() {
-	s.Foreach(Print)
+// Print logs each message to the stderr.
+func (s KeyTypeValueTypeStream) Print() {
+	s.Foreach(PrintKeyTypeValueTypeMsg)
 }
 
-func Print(m Msg) {
+// PrintKeyTypeValueTypeMsg prints a message to stderr.
+func PrintKeyTypeValueTypeMsg(m KeyTypeValueTypeMsg) {
 	log.Printf("%v, %v\n", m.Key, m.Value)
 }
 
-type KeySelector = func(m Msg) string
-
-func (s Stream) SelectKey(k KeySelector) Stream {
-	task := func(ch chan Msg, msg Msg) {
-		ch <- Msg{
+// SelectKey creates a new key per message.
+func (s KeyTypeValueTypeStream) SelectKey(k func(m KeyTypeValueTypeMsg) KeyType) KeyTypeValueTypeStream {
+	task := func(ch chan KeyTypeValueTypeMsg, msg KeyTypeValueTypeMsg) {
+		ch <- KeyTypeValueTypeMsg{
 			Key:   k(msg),
 			Value: msg.Value,
 		}
 	}
 
-	return s.process(task)
+	return s.Process(task)
 }
 
-type task = func(ch chan Msg, m Msg)
+// WriteTo persists messages to a kafka topic.
+func (s KeyTypeValueTypeStream) WriteTo(topicName string) {
 
-func (s Stream) process(t task) Stream {
-	ch := make(chan Msg, cap(s.ch))
+	task := func(ch chan IntIntMsg, msg IntIntMsg) {
+		msg.Value = m(msg.Value)
+		ch <- msg
+	}
+
+	return s.Process(task)
+
+	ch := make(chan KafkaMsg, channelCap)
 	commitCh := make(chan interface{}, 1)
-	stream := Stream{
+	stream := Topic{
+		ch:       ch,
+		commitCh: commitCh,
+	}
+
+	s.subscriptions[topicName] = stream
+	return stream
+}
+
+// Process executes the task and creates a new stream.
+func (s KeyTypeValueTypeStream) Process(t func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg)) KeyTypeValueTypeStream {
+	ch := make(chan KeyTypeValueTypeMsg, cap(s.ch))
+	commitCh := make(chan interface{}, 1)
+	stream := KeyTypeValueTypeStream{
+		app:      s.app,
 		ch:       ch,
 		commitCh: commitCh,
 	}

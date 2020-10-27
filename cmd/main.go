@@ -1,8 +1,9 @@
 package main
 
 import (
-	streams "lab/kafka-transactions/d"
 	"log"
+
+	streams "github.com/damoon/lab-kafka-transactions"
 )
 
 func main() {
