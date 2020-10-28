@@ -59,14 +59,12 @@ func main() {
 
 	err = c.SubscribeTopics(topics, nil)
 
-	var fatalErr error
-
 	msgCount := 0
 	msgCountPrev := 0
 	showLog := time.Tick(time.Second)
 
 	run := true
-	for run == true {
+	for run {
 
 		select {
 		case sig := <-sigchan:
@@ -88,16 +86,22 @@ func main() {
 				msgCount++
 			case kafka.AssignedPartitions:
 				log.Printf("%v\n", e)
-				c.Assign(e.Partitions)
+				err := c.Assign(e.Partitions)
+				if err != nil {
+					run = false
+				}
 			case kafka.RevokedPartitions:
 				log.Printf("%v\n", e)
-				c.Unassign()
+				err := c.Unassign()
+				if err != nil {
+					run = false
+				}
 			case kafka.PartitionEOF:
 				//				log.Printf("%v\n", e)
 			case kafka.Error:
 				log.Printf("error: %v\n", e)
 				if e.IsFatal() {
-					fatalErr = err
+					err = e
 					run = false
 				}
 			default:
@@ -108,7 +112,7 @@ func main() {
 
 	c.Close()
 
-	if fatalErr != nil {
+	if err != nil {
 		os.Exit(1)
 	}
 }

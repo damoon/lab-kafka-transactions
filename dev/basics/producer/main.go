@@ -90,7 +90,7 @@ func main() {
 	showLog := time.Tick(time.Second)
 	delay := float64(int(time.Millisecond))
 
-	for run == true {
+	for run {
 		select {
 		case <-showLog:
 			count := msgcnt - msgcntPrev

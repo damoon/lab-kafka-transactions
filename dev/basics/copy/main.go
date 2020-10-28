@@ -16,7 +16,6 @@ const (
 	setupTimeout       = 60 * time.Second
 	transactionTimeout = 10 * time.Second
 	flushTime          = 100 * time.Millisecond
-	pollTimeMs         = 10
 )
 
 func main() {
@@ -37,7 +36,7 @@ func stream() error {
 	target := os.Args[4]
 	topics := os.Args[5:]
 	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
 	var err error
 
@@ -152,7 +151,7 @@ func copy(sigchan <-chan os.Signal, target string, c *kafka.Consumer, p *kafka.P
 	msgCountPrev := 0
 	showLog := time.Tick(time.Second)
 
-	for run == true {
+	for run {
 
 		select {
 		case sig := <-sigchan:
@@ -183,7 +182,7 @@ func copy(sigchan <-chan os.Signal, target string, c *kafka.Consumer, p *kafka.P
 
 			pollTimeMs := 100
 			if ctx != nil {
-				pollTimeMs = int(flushDeadline.Sub(time.Now()) / time.Millisecond)
+				pollTimeMs = int(time.Until(flushDeadline) / time.Millisecond)
 			}
 
 			ev := c.Poll(pollTimeMs)
@@ -465,12 +464,11 @@ func ctxTimeout(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("context has no deadline specified")
 	}
 
-	timeout := deadline.Sub(time.Now())
-	milliseconds := int(timeout) / int(time.Millisecond)
+	milliseconds := time.Until(deadline) / time.Millisecond
 
 	if milliseconds <= 0 {
 		return 0, fmt.Errorf("context has timed out")
 	}
 
-	return milliseconds, nil
+	return int(milliseconds), nil
 }

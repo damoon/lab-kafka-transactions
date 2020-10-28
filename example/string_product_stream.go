@@ -22,7 +22,7 @@ type StringProductStream struct {
 // StringProductMsg is a key value pair send through the computation graph.
 type StringProductMsg struct {
 	Key   string
-	Value Product
+	Value *Product
 }
 
 // Branch splits the stream into count new branches. Idx selects routes messages between the streams.
@@ -60,8 +60,8 @@ func (s StringProductStream) Branch(count int, idx func(m StringProductMsg) int)
 					for i := 0; i < count; i++ {
 						close(chs[i])
 						close(commitChs[i])
-						return
 					}
+					return
 				}
 			}
 		}
@@ -103,9 +103,9 @@ func (s StringProductStream) FlatMap(f func(m StringProductMsg, e func(StringPro
 }
 
 // FlatMapValues creates 0-N messages per message while keeping the key.
-func (s StringProductStream) FlatMapValues(f func(v Product, e func(v Product))) StringProductStream {
+func (s StringProductStream) FlatMapValues(f func(v *Product, e func(v *Product))) StringProductStream {
 	task := func(ch chan StringProductMsg, msg StringProductMsg) {
-		e := func(v Product) {
+		e := func(v *Product) {
 			m := StringProductMsg{
 				Key:   msg.Key,
 				Value: v,
@@ -141,7 +141,7 @@ func (s StringProductStream) Map(m func(m StringProductMsg) StringProductMsg) St
 }
 
 // MapValues uses m to compute new values for each message.
-func (s StringProductStream) MapValues(m func(m Product) Product) StringProductStream {
+func (s StringProductStream) MapValues(m func(m *Product) *Product) StringProductStream {
 	task := func(ch chan StringProductMsg, msg StringProductMsg) {
 		msg.Value = m(msg.Value)
 		ch <- msg
@@ -243,7 +243,7 @@ func (s StringProductStream) SelectKey(k func(m StringProductMsg) string) String
 }
 
 // StreamStringProductTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamStringProductTopic(topicName string) StringProductStream {
+func (s *StreamingApplication) StreamStringProductTopic(topicName string, keyDecoder func(k []byte) string, valueDecoder func(v []byte) *Product) StringProductStream {
 	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
@@ -261,8 +261,8 @@ func (s *StreamingApplication) StreamStringProductTopic(topicName string) String
 
 	convert := func(m kafka.Message) StringProductMsg {
 		return StringProductMsg{
-			Key:   DecodeString(m.Key),
-			Value: DecodeProduct(m.Value),
+			Key:   keyDecoder(m.Key),
+			Value: valueDecoder(m.Value),
 		}
 	}
 
@@ -292,7 +292,7 @@ func (s *StreamingApplication) StreamStringProductTopic(topicName string) String
 }
 
 // WriteTo persists messages to a kafka topic.
-func (s StringProductStream) WriteTo(topicName string) *StreamingApplication {
+func (s StringProductStream) WriteTo(topicName string, keyDecoder func(k string) []byte, valueDecoder func(v *Product) []byte) *StreamingApplication {
 
 	task := func(m StringProductMsg) {
 	produce:
@@ -301,8 +301,8 @@ func (s StringProductStream) WriteTo(topicName string) *StreamingApplication {
 				Topic:     &topicName,
 				Partition: kafka.PartitionAny,
 			},
-			Key:   EncodeString(m.Key),
-			Value: EncodeProduct(m.Value),
+			Key:   keyDecoder(m.Key),
+			Value: valueDecoder(m.Value),
 		}, nil)
 		if err != nil {
 			if err.(kafka.Error).IsFatal() {

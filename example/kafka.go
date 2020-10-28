@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -117,11 +118,9 @@ func (s *StreamingApplication) Run() error {
 	}
 
 	defer func() {
-		s.producer.Close()
-		err := s.consumer.Close()
+		err := c.Close()
 		if err != nil {
-			// TODO handle error
-			fmt.Errorf("close consumer: %v", err)
+			log.Fatalf("close consumer: %v", err)
 		}
 	}()
 
@@ -165,7 +164,11 @@ func DecodeString(k []byte) string {
 
 func DecodeInt(k []byte) int {
 	var i int
-	binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
+	err := binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
+	if err != nil {
+		log.Fatalf("decode int: %v", err)
+	}
+
 	return i
 }
 

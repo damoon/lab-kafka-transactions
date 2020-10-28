@@ -10,9 +10,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func DecodeProduct(bb []byte) Product {
-	var p Product
-	err := proto.Unmarshal(bb, &p)
+func DecodeProduct(bb []byte) *Product {
+	var p *Product
+	err := proto.Unmarshal(bb, p)
 	if err != nil {
 		log.Fatalf("encode product: %v", err)
 	}
@@ -20,8 +20,8 @@ func DecodeProduct(bb []byte) Product {
 	return p
 }
 
-func EncodeProduct(p Product) []byte {
-	out, err := proto.Marshal(&p)
+func EncodeProduct(p *Product) []byte {
+	out, err := proto.Marshal(p)
 	if err != nil {
 		log.Fatalf("encode product: %v", err)
 	}

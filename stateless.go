@@ -63,8 +63,8 @@ func (s KeyTypeValueTypeStream) Branch(count int, idx func(m KeyTypeValueTypeMsg
 					for i := 0; i < count; i++ {
 						close(chs[i])
 						close(commitChs[i])
-						return
 					}
+					return
 				}
 			}
 		}
@@ -246,7 +246,7 @@ func (s KeyTypeValueTypeStream) SelectKey(k func(m KeyTypeValueTypeMsg) KeyType)
 }
 
 // StreamKeyTypeValueTypeTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string) KeyTypeValueTypeStream {
+func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string, keyDecoder func(k []byte) KeyType, valueDecoder func(v []byte) ValueType) KeyTypeValueTypeStream {
 	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
@@ -264,8 +264,8 @@ func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string) Key
 
 	convert := func(m kafka.Message) KeyTypeValueTypeMsg {
 		return KeyTypeValueTypeMsg{
-			Key:   DecodeKeyType(m.Key),
-			Value: DecodeValueType(m.Value),
+			Key:   keyDecoder(m.Key),
+			Value: valueDecoder(m.Value),
 		}
 	}
 
@@ -295,7 +295,7 @@ func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string) Key
 }
 
 // WriteTo persists messages to a kafka topic.
-func (s KeyTypeValueTypeStream) WriteTo(topicName string) *StreamingApplication {
+func (s KeyTypeValueTypeStream) WriteTo(topicName string, keyDecoder func(k KeyType) []byte, valueDecoder func(v ValueType) []byte) *StreamingApplication {
 
 	task := func(m KeyTypeValueTypeMsg) {
 	produce:
@@ -304,8 +304,8 @@ func (s KeyTypeValueTypeStream) WriteTo(topicName string) *StreamingApplication 
 				Topic:     &topicName,
 				Partition: kafka.PartitionAny,
 			},
-			Key:   EncodeKeyType(m.Key),
-			Value: EncodeValueType(m.Value),
+			Key:   keyDecoder(m.Key),
+			Value: valueDecoder(m.Value),
 		}, nil)
 		if err != nil {
 			if err.(kafka.Error).IsFatal() {

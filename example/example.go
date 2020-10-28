@@ -1,4 +1,4 @@
-//go:generate ../bin/genny -in=../stateless.go -out=string_product_stream.go gen "KeyType=string ValueType=Product"
+//go:generate ../bin/genny -in=../stateless.go -out=string_product_stream.go gen "KeyType=string ValueType=*Product"
 //go:generate sed -i "s/package streams/package example/" string_product_stream.go
 //go:generate ../bin/genny -in=../stateless.go -out=int_int_stream.go gen "KeyType=int ValueType=int"
 //go:generate sed -i "s/package streams/package example/" int_int_stream.go
