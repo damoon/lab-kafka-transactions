@@ -11,15 +11,15 @@ import (
 )
 
 func TestCopy(t *testing.T) {
-	bytesToKey := func(in []byte) KafkaKey { return in }
-	keyToBytes := func(in KafkaKey) []byte { return in }
-	toString := func(in []byte) string { return string(in) }
-	fromString := func(in string) []byte { return []byte(in) }
+	bytesToKafkaKey := func(in []byte) KafkaKey { return in }
+	kafkaKeyToBytes := func(in KafkaKey) []byte { return in }
+	bytesToString := func(in []byte) string { return string(in) }
+	stringToBytes := func(in string) []byte { return []byte(in) }
 
 	err := NewStreamingApplication("test-application-reverse-strings", "unit-test", "127.0.0.1:9092").
-		StreamKafkaKeyStringTopic("test-topic-in", bytesToKey, toString).
+		StreamKafkaKeyStringTopic("test-topic-in", bytesToKafkaKey, bytesToString).
 		MapValues(reverse).
-		WriteTo("test-topic-out", keyToBytes, fromString).
+		WriteTo("test-topic-out", kafkaKeyToBytes, stringToBytes).
 		Run()
 	if err != nil {
 		t.Errorf("run app: %v", err)

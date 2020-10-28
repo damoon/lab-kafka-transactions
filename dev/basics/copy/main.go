@@ -64,6 +64,7 @@ func stream() error {
 		"auto.offset.reset":               "earliest",
 		"enable.auto.commit":              false,
 		"isolation.level":                 "read_committed",
+		// "partition.assignment.strategy":   "cooperative-sticky", // https://github.com/edenhill/librdkafka/issues/1992
 	}
 
 	producerConfig := &kafka.ConfigMap{
@@ -109,7 +110,7 @@ func stream() error {
 		}
 	}()
 
-	err = copy(sigchan, target, topics, c, p)
+	err = copy(sigchan, target, c, p)
 	if err != nil {
 		return err
 	}
@@ -136,7 +137,7 @@ retryInitTransaction:
 	return err
 }
 
-func copy(sigchan <-chan os.Signal, target string, topics []string, c *kafka.Consumer, p *kafka.Producer) error {
+func copy(sigchan <-chan os.Signal, target string, c *kafka.Consumer, p *kafka.Producer) error {
 
 	run := true
 
@@ -155,7 +156,7 @@ func copy(sigchan <-chan os.Signal, target string, topics []string, c *kafka.Con
 
 		select {
 		case sig := <-sigchan:
-			//log.Printf("%%1 messages in transaction %v\n", msgCountTrx)
+			// log.Printf("%%1 messages in transaction %v\n", msgCountTrx)
 
 			fmt.Printf("Caught signal %v: terminating\n", sig)
 			err := commit(ctx, c, p)
@@ -169,7 +170,7 @@ func copy(sigchan <-chan os.Signal, target string, topics []string, c *kafka.Con
 			msgCountPrev = msgCount
 
 		case <-flush:
-			//log.Printf("%%3 messages in transaction %v\n", msgCountTrx)
+			// log.Printf("%%3 messages in transaction %v\n", msgCountTrx)
 
 			err := commit(ctx, c, p)
 			if err != nil {
@@ -178,7 +179,7 @@ func copy(sigchan <-chan os.Signal, target string, topics []string, c *kafka.Con
 			ctx = nil
 
 		default:
-			//			log.Println("polling")
+			// log.Println("polling")
 
 			pollTimeMs := 100
 			if ctx != nil {
@@ -192,15 +193,14 @@ func copy(sigchan <-chan os.Signal, target string, topics []string, c *kafka.Con
 
 			switch e := ev.(type) {
 			case *kafka.Message:
-				//				log.Println("new message")
-				//log.Printf("%% Message on %s: %s\n", e.TopicPartition, string(e.Value))
-				//if e.Headers != nil {
-				//	log.Printf("%% Headers: %v\n", e.Headers)
-				//}
+				// log.Printf("%% Message on %s: %s\n", e.TopicPartition, string(e.Value))
+				// if e.Headers != nil {
+				// 	log.Printf("%% Headers: %v\n", e.Headers)
+				// }
 
 				if ctx == nil {
 				beginTransaction:
-					//log.Println("beginTransaction")
+					// log.Println("beginTransaction")
 					err := p.BeginTransaction()
 					if err != nil {
 						if err.(kafka.Error).IsFatal() {

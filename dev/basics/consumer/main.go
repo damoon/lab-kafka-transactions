@@ -48,6 +48,7 @@ func main() {
 		"auto.offset.reset":               "earliest",
 		//		"enable.auto.commit":              false,
 		"isolation.level": "read_committed",
+		// "partition.assignment.strategy": "cooperative-sticky", // until https://github.com/edenhill/librdkafka/issues/1992
 	}
 
 	c, err := kafka.NewConsumer(cfg)
@@ -57,6 +58,8 @@ func main() {
 	}
 
 	err = c.SubscribeTopics(topics, nil)
+
+	var fatalErr error
 
 	msgCount := 0
 	msgCountPrev := 0
@@ -94,6 +97,7 @@ func main() {
 			case kafka.Error:
 				log.Printf("error: %v\n", e)
 				if e.IsFatal() {
+					fatalErr = err
 					run = false
 				}
 			default:
@@ -101,8 +105,6 @@ func main() {
 			}
 		}
 	}
-
-	fatalErr := c.GetFatalError()
 
 	c.Close()
 

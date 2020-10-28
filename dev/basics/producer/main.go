@@ -59,6 +59,7 @@ func main() {
 				switch ev := e.(type) {
 				case *kafka.Message:
 					m := ev
+					//					fmt.Printf("Delivered: %v\n", m.TopicPartition)
 					if m.TopicPartition.Error != nil {
 						fmt.Printf("Delivery failed: %v\n", m.TopicPartition.Error)
 					}
