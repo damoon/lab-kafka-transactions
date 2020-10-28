@@ -1,7 +1,9 @@
 package example
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"time"
 
@@ -15,6 +17,9 @@ const (
 
 // KafkaKey is a key of a kafka message.
 type KafkaKey []byte
+
+// KafkaValue is a key of a kafka message.
+type KafkaValue []byte
 
 // StreamingApplication allows exactly once processing between Kafka streams.
 type StreamingApplication struct {
@@ -148,4 +153,33 @@ func (s *StreamingApplication) Run() error {
 	// }()
 
 	return nil
+}
+
+func DecodeKafkaKey(k []byte) KafkaKey {
+	return k
+}
+
+func DecodeString(k []byte) string {
+	return string(k)
+}
+
+func DecodeInt(k []byte) int {
+	var i int
+	binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
+	return i
+}
+
+func EncodeKafkaKey(k KafkaKey) []byte {
+	return k
+}
+
+func EncodeString(s string) []byte {
+	return []byte(s)
+}
+
+func EncodeInt(i int) []byte {
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutVarint(buf, int64(i))
+	b := buf[:n]
+	return b
 }

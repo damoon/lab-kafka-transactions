@@ -243,7 +243,7 @@ func (s KafkaKeyStringStream) SelectKey(k func(m KafkaKeyStringMsg) KafkaKey) Ka
 }
 
 // StreamKafkaKeyStringTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamKafkaKeyStringTopic(topicName string, keyDecoder func(k []byte) KafkaKey, valueDecoder func(v []byte) string) KafkaKeyStringStream {
+func (s *StreamingApplication) StreamKafkaKeyStringTopic(topicName string) KafkaKeyStringStream {
 	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
@@ -259,11 +259,40 @@ func (s *StreamingApplication) StreamKafkaKeyStringTopic(topicName string, keyDe
 		commitCh: commitCh,
 	}
 
+	convert := func(m kafka.Message) KafkaKeyStringMsg {
+		return KafkaKeyStringMsg{
+			Key:   DecodeKafkaKey(m.Key),
+			Value: DecodeString(m.Value),
+		}
+	}
+
+	go func() {
+		for {
+			select {
+			case msg := <-kafkaMsgCh:
+				ch <- convert(msg)
+
+			case _, ok := <-commitCh:
+				for len(kafkaMsgCh) > 0 {
+					msg := <-kafkaMsgCh
+					ch <- convert(msg)
+				}
+				commitCh <- struct{}{}
+
+				if !ok {
+					close(ch)
+					close(commitCh)
+					return
+				}
+			}
+		}
+	}()
+
 	return stream
 }
 
 // WriteTo persists messages to a kafka topic.
-func (s KafkaKeyStringStream) WriteTo(topicName string, keyEncoder func(k KafkaKey) []byte, valueEncoder func(v string) []byte) *StreamingApplication {
+func (s KafkaKeyStringStream) WriteTo(topicName string) *StreamingApplication {
 
 	task := func(m KafkaKeyStringMsg) {
 	produce:
@@ -272,8 +301,8 @@ func (s KafkaKeyStringStream) WriteTo(topicName string, keyEncoder func(k KafkaK
 				Topic:     &topicName,
 				Partition: kafka.PartitionAny,
 			},
-			Key:   keyEncoder(m.Key),
-			Value: valueEncoder(m.Value),
+			Key:   EncodeKafkaKey(m.Key),
+			Value: EncodeString(m.Value),
 		}, nil)
 		if err != nil {
 			if err.(kafka.Error).IsFatal() {
