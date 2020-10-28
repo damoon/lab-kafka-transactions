@@ -1,7 +1,4 @@
-
 #!/bin/bash
 set -euo pipefail
 
-export GOBIN=$(pwd)/bin
-export PATH=$GOBIN:$PATH
-go get github.com/cheekybits/genny
+PATH=$PWD/../bin:$PATH gogenerate ./...

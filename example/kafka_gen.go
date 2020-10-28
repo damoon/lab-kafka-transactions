@@ -151,14 +151,17 @@ func (s *StreamingApplication) Run() error {
 	return nil
 }
 
+// DecodeByteArray casts a byte array to the type alias ByteArray.
 func DecodeByteArray(k []byte) (ByteArray, error) {
 	return k, nil
 }
 
+// DecodeString casts a byte array to a string.
 func DecodeString(k []byte) (string, error) {
 	return string(k), nil
 }
 
+// DecodeInt converts a byte array to a string.
 func DecodeInt(k []byte) (int, error) {
 	var i int
 	err := binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
@@ -169,14 +172,17 @@ func DecodeInt(k []byte) (int, error) {
 	return i, nil
 }
 
+// EncodeByteArray casts the ByteArray type alias to a byte array.
 func EncodeByteArray(k ByteArray) ([]byte, error) {
 	return k, nil
 }
 
+// EncodeString casts a string to a byte array.
 func EncodeString(s string) ([]byte, error) {
 	return []byte(s), nil
 }
 
+// EncodeInt converts an int to a byte array.
 func EncodeInt(i int) ([]byte, error) {
 	buf := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutVarint(buf, int64(i))

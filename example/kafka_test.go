@@ -1,7 +1,7 @@
-//go:generate cp ../streaming_application.go kafka.go
-//go:generate sed -i "s/package streams/package example/" kafka.go
-//go:generate ../bin/genny -in=../stateless.go -out=kafka_stream.go gen "KeyType=ByteArray ValueType=string"
-//go:generate sed -i "s/package streams/package example/" kafka_stream.go
+//go:generate cp ../streaming_application.go kafka_gen.go
+//go:generate sed -i "s/package streams/package example/" kafka_gen.go
+//go:generate genny -in=../stateless.go -out=kafka_stream_gen.go gen "KeyType=ByteArray ValueType=string"
+//go:generate sed -i "s/package streams/package example/" kafka_stream_gen.go
 
 package example
 
