@@ -151,35 +151,35 @@ func (s *StreamingApplication) Run() error {
 	return nil
 }
 
-func DecodeByteArray(k []byte) ByteArray {
-	return k
+func DecodeByteArray(k []byte) (ByteArray, error) {
+	return k, nil
 }
 
-func DecodeString(k []byte) string {
-	return string(k)
+func DecodeString(k []byte) (string, error) {
+	return string(k), nil
 }
 
-func DecodeInt(k []byte) int {
+func DecodeInt(k []byte) (int, error) {
 	var i int
 	err := binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
 	if err != nil {
-		log.Fatalf("decode int: %v", err)
+		return 0, fmt.Errorf("decode int: %v", err)
 	}
 
-	return i
+	return i, nil
 }
 
-func EncodeByteArray(k ByteArray) []byte {
-	return k
+func EncodeByteArray(k ByteArray) ([]byte, error) {
+	return k, nil
 }
 
-func EncodeString(s string) []byte {
-	return []byte(s)
+func EncodeString(s string) ([]byte, error) {
+	return []byte(s), nil
 }
 
-func EncodeInt(i int) []byte {
+func EncodeInt(i int) ([]byte, error) {
 	buf := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutVarint(buf, int64(i))
 	b := buf[:n]
-	return b
+	return b, nil
 }

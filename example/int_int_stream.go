@@ -243,7 +243,7 @@ func (s IntIntStream) SelectKey(k func(m IntIntMsg) int) IntIntStream {
 }
 
 // StreamIntIntTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamIntIntTopic(topicName string, keyDecoder func(k []byte) int, valueDecoder func(v []byte) int) IntIntStream {
+func (s *StreamingApplication) StreamIntIntTopic(topicName string, keyDecoder func(k []byte) (int, error), valueDecoder func(v []byte) (int, error)) IntIntStream {
 	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
@@ -260,9 +260,19 @@ func (s *StreamingApplication) StreamIntIntTopic(topicName string, keyDecoder fu
 	}
 
 	convert := func(m kafka.Message) IntIntMsg {
+		key, err := keyDecoder(m.Key)
+		if err != nil {
+			log.Fatalf("decode key: key %v: %v", m.Key, err)
+		}
+
+		value, err := valueDecoder(m.Value)
+		if err != nil {
+			log.Fatalf("decode value: value %v: %v", m.Value, err)
+		}
+
 		return IntIntMsg{
-			Key:   keyDecoder(m.Key),
-			Value: valueDecoder(m.Value),
+			Key:   key,
+			Value: value,
 		}
 	}
 
@@ -292,17 +302,27 @@ func (s *StreamingApplication) StreamIntIntTopic(topicName string, keyDecoder fu
 }
 
 // WriteTo persists messages to a kafka topic.
-func (s IntIntStream) WriteTo(topicName string, keyDecoder func(k int) []byte, valueDecoder func(v int) []byte) *StreamingApplication {
+func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) ([]byte, error), valueEncoder func(v int) ([]byte, error)) *StreamingApplication {
 
 	task := func(m IntIntMsg) {
 	produce:
-		err := s.app.producer.Produce(&kafka.Message{
+		key, err := keyEncoder(m.Key)
+		if err != nil {
+			log.Fatalf("encode key: key %v: %v", m.Key, err)
+		}
+
+		value, err := valueEncoder(m.Value)
+		if err != nil {
+			log.Fatalf("encode value: value %v: %v", m.Value, err)
+		}
+
+		err = s.app.producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{
 				Topic:     &topicName,
 				Partition: kafka.PartitionAny,
 			},
-			Key:   keyDecoder(m.Key),
-			Value: valueDecoder(m.Value),
+			Key:   key,
+			Value: value,
 		}, nil)
 		if err != nil {
 			if err.(kafka.Error).IsFatal() {

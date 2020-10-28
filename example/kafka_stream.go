@@ -243,7 +243,7 @@ func (s ByteArrayStringStream) SelectKey(k func(m ByteArrayStringMsg) ByteArray)
 }
 
 // StreamByteArrayStringTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyDecoder func(k []byte) ByteArray, valueDecoder func(v []byte) string) ByteArrayStringStream {
+func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyDecoder func(k []byte) (ByteArray, error), valueDecoder func(v []byte) (string, error)) ByteArrayStringStream {
 	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
@@ -260,9 +260,19 @@ func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyD
 	}
 
 	convert := func(m kafka.Message) ByteArrayStringMsg {
+		key, err := keyDecoder(m.Key)
+		if err != nil {
+			log.Fatalf("decode key: key %v: %v", m.Key, err)
+		}
+
+		value, err := valueDecoder(m.Value)
+		if err != nil {
+			log.Fatalf("decode value: value %v: %v", m.Value, err)
+		}
+
 		return ByteArrayStringMsg{
-			Key:   keyDecoder(m.Key),
-			Value: valueDecoder(m.Value),
+			Key:   key,
+			Value: value,
 		}
 	}
 
@@ -292,17 +302,27 @@ func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyD
 }
 
 // WriteTo persists messages to a kafka topic.
-func (s ByteArrayStringStream) WriteTo(topicName string, keyDecoder func(k ByteArray) []byte, valueDecoder func(v string) []byte) *StreamingApplication {
+func (s ByteArrayStringStream) WriteTo(topicName string, keyEncoder func(k ByteArray) ([]byte, error), valueEncoder func(v string) ([]byte, error)) *StreamingApplication {
 
 	task := func(m ByteArrayStringMsg) {
 	produce:
-		err := s.app.producer.Produce(&kafka.Message{
+		key, err := keyEncoder(m.Key)
+		if err != nil {
+			log.Fatalf("encode key: key %v: %v", m.Key, err)
+		}
+
+		value, err := valueEncoder(m.Value)
+		if err != nil {
+			log.Fatalf("encode value: value %v: %v", m.Value, err)
+		}
+
+		err = s.app.producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{
 				Topic:     &topicName,
 				Partition: kafka.PartitionAny,
 			},
-			Key:   keyDecoder(m.Key),
-			Value: valueDecoder(m.Value),
+			Key:   key,
+			Value: value,
 		}, nil)
 		if err != nil {
 			if err.(kafka.Error).IsFatal() {
