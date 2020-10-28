@@ -12,29 +12,29 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-// KafkaKeyStringStream computes on a stream of key (KafkaKey) value (String) messages.
-type KafkaKeyStringStream struct {
+// ByteArrayStringStream computes on a stream of key (ByteArray) value (String) messages.
+type ByteArrayStringStream struct {
 	app      *StreamingApplication
-	ch       <-chan KafkaKeyStringMsg
+	ch       <-chan ByteArrayStringMsg
 	commitCh <-chan interface{}
 }
 
-// KafkaKeyStringMsg is a key value pair send through the computation graph.
-type KafkaKeyStringMsg struct {
-	Key   KafkaKey
+// ByteArrayStringMsg is a key value pair send through the computation graph.
+type ByteArrayStringMsg struct {
+	Key   ByteArray
 	Value string
 }
 
 // Branch splits the stream into count new branches. Idx selects routes messages between the streams.
-func (s KafkaKeyStringStream) Branch(count int, idx func(m KafkaKeyStringMsg) int) []KafkaKeyStringStream {
-	chs := make([]chan KafkaKeyStringMsg, count)
+func (s ByteArrayStringStream) Branch(count int, idx func(m ByteArrayStringMsg) int) []ByteArrayStringStream {
+	chs := make([]chan ByteArrayStringMsg, count)
 	commitChs := make([]chan interface{}, count)
-	streams := make([]KafkaKeyStringStream, count)
+	streams := make([]ByteArrayStringStream, count)
 
 	for i := 0; i < count; i++ {
-		chs[i] = make(chan KafkaKeyStringMsg, cap(s.ch))
+		chs[i] = make(chan ByteArrayStringMsg, cap(s.ch))
 		commitChs[i] = make(chan interface{}, 1)
-		streams[i] = KafkaKeyStringStream{
+		streams[i] = ByteArrayStringStream{
 			ch:       chs[i],
 			commitCh: commitChs[i],
 		}
@@ -71,8 +71,8 @@ func (s KafkaKeyStringStream) Branch(count int, idx func(m KafkaKeyStringMsg) in
 }
 
 // Filter keeps the messages with f(message) == True.
-func (s KafkaKeyStringStream) Filter(f func(m KafkaKeyStringMsg) bool) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) Filter(f func(m ByteArrayStringMsg) bool) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
 		if f(msg) {
 			ch <- msg
 		}
@@ -82,17 +82,17 @@ func (s KafkaKeyStringStream) Filter(f func(m KafkaKeyStringMsg) bool) KafkaKeyS
 }
 
 // InverseFilter keeps the messages with f(message) == False.
-func (s KafkaKeyStringStream) InverseFilter(f func(m KafkaKeyStringMsg) bool) KafkaKeyStringStream {
-	inverse := func(m KafkaKeyStringMsg) bool {
+func (s ByteArrayStringStream) InverseFilter(f func(m ByteArrayStringMsg) bool) ByteArrayStringStream {
+	inverse := func(m ByteArrayStringMsg) bool {
 		return !f(m)
 	}
 	return s.Filter(inverse)
 }
 
 // FlatMap creates 0-N messages per message.
-func (s KafkaKeyStringStream) FlatMap(f func(m KafkaKeyStringMsg, e func(KafkaKeyStringMsg))) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
-		e := func(m KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) FlatMap(f func(m ByteArrayStringMsg, e func(ByteArrayStringMsg))) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
+		e := func(m ByteArrayStringMsg) {
 			ch <- m
 		}
 
@@ -103,10 +103,10 @@ func (s KafkaKeyStringStream) FlatMap(f func(m KafkaKeyStringMsg, e func(KafkaKe
 }
 
 // FlatMapValues creates 0-N messages per message while keeping the key.
-func (s KafkaKeyStringStream) FlatMapValues(f func(v string, e func(v string))) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) FlatMapValues(f func(v string, e func(v string))) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
 		e := func(v string) {
-			m := KafkaKeyStringMsg{
+			m := ByteArrayStringMsg{
 				Key:   msg.Key,
 				Value: v,
 			}
@@ -120,8 +120,8 @@ func (s KafkaKeyStringStream) FlatMapValues(f func(v string, e func(v string))) 
 }
 
 // Foreach executes f per messages. The function is terminal and blocks until completion.
-func (s KafkaKeyStringStream) Foreach(f func(KafkaKeyStringMsg)) {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) Foreach(f func(ByteArrayStringMsg)) {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
 		f(msg)
 	}
 
@@ -132,8 +132,8 @@ func (s KafkaKeyStringStream) Foreach(f func(KafkaKeyStringMsg)) {
 }
 
 // Map uses m to compute a new message per message.
-func (s KafkaKeyStringStream) Map(m func(m KafkaKeyStringMsg) KafkaKeyStringMsg) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) Map(m func(m ByteArrayStringMsg) ByteArrayStringMsg) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
 		ch <- m(msg)
 	}
 
@@ -141,8 +141,8 @@ func (s KafkaKeyStringStream) Map(m func(m KafkaKeyStringMsg) KafkaKeyStringMsg)
 }
 
 // MapValues uses m to compute new values for each message.
-func (s KafkaKeyStringStream) MapValues(m func(m string) string) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) MapValues(m func(m string) string) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
 		msg.Value = m(msg.Value)
 		ch <- msg
 	}
@@ -151,18 +151,18 @@ func (s KafkaKeyStringStream) MapValues(m func(m string) string) KafkaKeyStringS
 }
 
 // Merge combines multiple streams into one.
-func (s KafkaKeyStringStream) Merge(ss ...KafkaKeyStringStream) KafkaKeyStringStream {
-	ch := make(chan KafkaKeyStringMsg, cap(s.ch))
+func (s ByteArrayStringStream) Merge(ss ...ByteArrayStringStream) ByteArrayStringStream {
+	ch := make(chan ByteArrayStringMsg, cap(s.ch))
 	commitCh := make(chan interface{}, 1)
 	streamsCount := len(ss) + 1
 	internalCommitCh := make(chan interface{}, streamsCount)
-	stream := KafkaKeyStringStream{
+	stream := ByteArrayStringStream{
 		ch:       ch,
 		commitCh: commitCh,
 	}
 	wg := sync.WaitGroup{}
 
-	copy := func(s KafkaKeyStringStream) {
+	copy := func(s ByteArrayStringStream) {
 		for {
 			select {
 			case msg := <-s.ch:
@@ -211,8 +211,8 @@ func (s KafkaKeyStringStream) Merge(ss ...KafkaKeyStringStream) KafkaKeyStringSt
 }
 
 // Peek executes p per message.
-func (s KafkaKeyStringStream) Peek(p func(KafkaKeyStringMsg)) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
+func (s ByteArrayStringStream) Peek(p func(ByteArrayStringMsg)) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
 		p(msg)
 		ch <- msg
 	}
@@ -221,19 +221,19 @@ func (s KafkaKeyStringStream) Peek(p func(KafkaKeyStringMsg)) KafkaKeyStringStre
 }
 
 // Print logs each message to the stderr.
-func (s KafkaKeyStringStream) Print() {
-	s.Foreach(PrintKafkaKeyStringMsg)
+func (s ByteArrayStringStream) Print() {
+	s.Foreach(PrintByteArrayStringMsg)
 }
 
-// PrintKafkaKeyStringMsg prints a message to stderr.
-func PrintKafkaKeyStringMsg(m KafkaKeyStringMsg) {
+// PrintByteArrayStringMsg prints a message to stderr.
+func PrintByteArrayStringMsg(m ByteArrayStringMsg) {
 	log.Printf("%v, %v\n", m.Key, m.Value)
 }
 
 // SelectKey creates a new key per message.
-func (s KafkaKeyStringStream) SelectKey(k func(m KafkaKeyStringMsg) KafkaKey) KafkaKeyStringStream {
-	task := func(ch chan KafkaKeyStringMsg, msg KafkaKeyStringMsg) {
-		ch <- KafkaKeyStringMsg{
+func (s ByteArrayStringStream) SelectKey(k func(m ByteArrayStringMsg) ByteArray) ByteArrayStringStream {
+	task := func(ch chan ByteArrayStringMsg, msg ByteArrayStringMsg) {
+		ch <- ByteArrayStringMsg{
 			Key:   k(msg),
 			Value: msg.Value,
 		}
@@ -242,8 +242,8 @@ func (s KafkaKeyStringStream) SelectKey(k func(m KafkaKeyStringMsg) KafkaKey) Ka
 	return s.Process(task)
 }
 
-// StreamKafkaKeyStringTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamKafkaKeyStringTopic(topicName string, keyDecoder func(k []byte) KafkaKey, valueDecoder func(v []byte) string) KafkaKeyStringStream {
+// StreamByteArrayStringTopic subscribes to a topic and streams its messages.
+func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyDecoder func(k []byte) ByteArray, valueDecoder func(v []byte) string) ByteArrayStringStream {
 	kafkaMsgCh := make(chan kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
@@ -252,15 +252,15 @@ func (s *StreamingApplication) StreamKafkaKeyStringTopic(topicName string, keyDe
 	}
 	s.subscriptions[topicName] = topic
 
-	ch := make(chan KafkaKeyStringMsg, channelCap)
-	stream := KafkaKeyStringStream{
+	ch := make(chan ByteArrayStringMsg, channelCap)
+	stream := ByteArrayStringStream{
 		app:      s,
 		ch:       ch,
 		commitCh: commitCh,
 	}
 
-	convert := func(m kafka.Message) KafkaKeyStringMsg {
-		return KafkaKeyStringMsg{
+	convert := func(m kafka.Message) ByteArrayStringMsg {
+		return ByteArrayStringMsg{
 			Key:   keyDecoder(m.Key),
 			Value: valueDecoder(m.Value),
 		}
@@ -292,9 +292,9 @@ func (s *StreamingApplication) StreamKafkaKeyStringTopic(topicName string, keyDe
 }
 
 // WriteTo persists messages to a kafka topic.
-func (s KafkaKeyStringStream) WriteTo(topicName string, keyDecoder func(k KafkaKey) []byte, valueDecoder func(v string) []byte) *StreamingApplication {
+func (s ByteArrayStringStream) WriteTo(topicName string, keyDecoder func(k ByteArray) []byte, valueDecoder func(v string) []byte) *StreamingApplication {
 
-	task := func(m KafkaKeyStringMsg) {
+	task := func(m ByteArrayStringMsg) {
 	produce:
 		err := s.app.producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{
@@ -335,10 +335,10 @@ func (s KafkaKeyStringStream) WriteTo(topicName string, keyDecoder func(k KafkaK
 }
 
 // Process executes the task and creates a new stream.
-func (s KafkaKeyStringStream) Process(task func(ch chan KafkaKeyStringMsg, m KafkaKeyStringMsg)) KafkaKeyStringStream {
-	ch := make(chan KafkaKeyStringMsg, cap(s.ch))
+func (s ByteArrayStringStream) Process(task func(ch chan ByteArrayStringMsg, m ByteArrayStringMsg)) ByteArrayStringStream {
+	ch := make(chan ByteArrayStringMsg, cap(s.ch))
 	commitCh := make(chan interface{}, 1)
-	stream := KafkaKeyStringStream{
+	stream := ByteArrayStringStream{
 		app:      s.app,
 		ch:       ch,
 		commitCh: commitCh,

@@ -16,11 +16,8 @@ const (
 	channelCap   = 100
 )
 
-// KafkaKey is a key of a kafka message.
-type KafkaKey []byte
-
-// KafkaValue is a key of a kafka message.
-type KafkaValue []byte
+// ByteArray is required to allow genny work around the array syntax.
+type ByteArray []byte
 
 // StreamingApplication allows exactly once processing between Kafka streams.
 type StreamingApplication struct {
@@ -154,7 +151,7 @@ func (s *StreamingApplication) Run() error {
 	return nil
 }
 
-func DecodeKafkaKey(k []byte) KafkaKey {
+func DecodeByteArray(k []byte) ByteArray {
 	return k
 }
 
@@ -172,7 +169,7 @@ func DecodeInt(k []byte) int {
 	return i
 }
 
-func EncodeKafkaKey(k KafkaKey) []byte {
+func EncodeByteArray(k ByteArray) []byte {
 	return k
 }
 

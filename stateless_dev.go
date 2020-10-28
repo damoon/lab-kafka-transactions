@@ -1,17 +1,17 @@
 package streams
 
-func DecodeKeyType(KafkaKey) KeyType {
+func DecodeKeyType([]byte) KeyType {
 	return []byte{}
 }
 
-func EncodeKeyType(KeyType) KafkaKey {
+func EncodeKeyType(KeyType) []byte {
 	return []byte{}
 }
 
-func DecodeValueType(KafkaValue) ValueType {
+func DecodeValueType([]byte) ValueType {
 	return []byte{}
 }
 
-func EncodeValueType(ValueType) KafkaValue {
+func EncodeValueType(ValueType) []byte {
 	return []byte{}
 }
