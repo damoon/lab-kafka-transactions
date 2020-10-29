@@ -6,14 +6,15 @@ PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
 all: generate
 
 generate: bin/protoc bin/genny bin/protoc-gen-go bin/gogenerate
-	gogenerate ./...
+	gogenerate -skipCache ./...
 
-bin/protoc: Makefile
-	curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-	unzip -o ${PROTOC_ZIP} -d . bin/protoc
+bin/protoc: bin/${PROTOC_ZIP}
+	unzip -o bin/${PROTOC_ZIP} -d . bin/protoc
 	#unzip -o ${PROTOC_ZIP} -d . 'include/*'
-	rm -f ${PROTOC_ZIP}
 	touch bin/protoc
+
+bin/${PROTOC_ZIP}:
+	curl -L -o bin/${PROTOC_ZIP} https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
 
 bin/genny: go.sum
 	go get github.com/cheekybits/genny

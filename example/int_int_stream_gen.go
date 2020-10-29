@@ -310,8 +310,8 @@ func (s *StreamingApplication) StreamIntIntTopic(topicName string, keyDecoder fu
 // WriteTo persists messages to a kafka topic.
 func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) ([]byte, error), valueEncoder func(v int) ([]byte, error)) *StreamingApplication {
 
+	retries := 0
 	task := func(m IntIntMsg) {
-	produce:
 		key, err := keyEncoder(m.Key)
 		if err != nil {
 			log.Fatalf("encode key: key %v: %v", m.Key, err)
@@ -322,7 +322,7 @@ func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) ([]byte, 
 			log.Fatalf("encode value: value %v: %v", m.Value, err)
 		}
 
-		// TODO use produce channel instead
+	produce:
 		err = s.app.producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{
 				Topic:     &topicName,
@@ -332,14 +332,21 @@ func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) ([]byte, 
 			Value: value,
 		}, nil)
 		if err != nil {
-			if err.(kafka.Error).IsFatal() {
+			ke := err.(kafka.Error)
+			if ke.IsFatal() {
 				log.Fatalf("fatal error: produce message: %v", err)
 			}
 
-			log.Printf("produce message: %v", err)
-			time.Sleep(10 * time.Millisecond) // TODO: add exponential back off here
+			if retries >= 20 {
+				log.Fatalf("produce message: code %d: %v", ke.Code(), ke.Error())
+			}
+
+			time.Sleep(50 * time.Millisecond) // TODO: add exponential back off here
+			retries++
 			goto produce
 		}
+
+		retries = 0
 	}
 
 	go func() {

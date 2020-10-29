@@ -156,7 +156,7 @@ func (s *StreamingApplication) process(sigchan <-chan os.Signal) error {
 		<-doneCh
 	}()
 
-	var flush <-chan time.Time = nil
+	var flush <-chan time.Time
 	var flushDeadline time.Time
 	var ctx context.Context
 
