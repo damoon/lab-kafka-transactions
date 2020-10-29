@@ -6,16 +6,22 @@
 package example
 
 import (
+	"os"
+	"os/signal"
+	"syscall"
 	"testing"
 	"unicode/utf8"
 )
 
 func TestCopy(t *testing.T) {
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
+
 	err := NewStreamingApplication("test-application-reverse-strings", "unit-test", "127.0.0.1:9092").
 		StreamByteArrayStringTopic("test-topic-in", DecodeByteArray, DecodeString).
 		MapValues(reverse).
 		WriteTo("test-topic-out", EncodeByteArray, EncodeString).
-		Run()
+		Run(sigchan)
 	if err != nil {
 		t.Errorf("run app: %v", err)
 	}

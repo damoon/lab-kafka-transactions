@@ -127,8 +127,12 @@ func (s ByteArrayStringStream) Foreach(f func(ByteArrayStringMsg)) {
 
 	stream := s.Process(task)
 
-	for range stream.commitCh {
-	}
+	go func() {
+		s.app.requiredCommits++
+		for range stream.commitCh {
+			s.app.commits <- struct{}{}
+		}
+	}()
 }
 
 // Map uses m to compute a new message per message.
@@ -244,7 +248,9 @@ func (s ByteArrayStringStream) SelectKey(k func(m ByteArrayStringMsg) ByteArray)
 
 // StreamByteArrayStringTopic subscribes to a topic and streams its messages.
 func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyDecoder func(k []byte) (ByteArray, error), valueDecoder func(v []byte) (string, error)) ByteArrayStringStream {
-	kafkaMsgCh := make(chan kafka.Message, channelCap)
+	// TODO enforce only one read per topic, because only one offset is stored per stream.
+
+	kafkaMsgCh := make(chan *kafka.Message, channelCap)
 	commitCh := make(chan interface{}, 1)
 	topic := topic{
 		ch:       kafkaMsgCh,
@@ -259,7 +265,7 @@ func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyD
 		commitCh: commitCh,
 	}
 
-	convert := func(m kafka.Message) ByteArrayStringMsg {
+	convert := func(m *kafka.Message) ByteArrayStringMsg {
 		key, err := keyDecoder(m.Key)
 		if err != nil {
 			log.Fatalf("decode key: key %v: %v", m.Key, err)
@@ -316,6 +322,7 @@ func (s ByteArrayStringStream) WriteTo(topicName string, keyEncoder func(k ByteA
 			log.Fatalf("encode value: value %v: %v", m.Value, err)
 		}
 
+		// TODO use produce channel instead
 		err = s.app.producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{
 				Topic:     &topicName,
@@ -330,12 +337,13 @@ func (s ByteArrayStringStream) WriteTo(topicName string, keyEncoder func(k ByteA
 			}
 
 			log.Printf("produce message: %v", err)
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) // TODO: add exponential back off here
 			goto produce
 		}
 	}
 
 	go func() {
+		s.app.requiredCommits++
 		for {
 			select {
 			case msg := <-s.ch:
