@@ -374,6 +374,18 @@ func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) ([]byte, 
 	return s.app
 }
 
+// Repartition persists the stream into a topic and sorts the messages, based on their key, into partitions.
+func (s IntIntStream) Repartition(
+	topicName string,
+	keyEncoder func(k int) ([]byte, error),
+	valueEncoder func(v int) ([]byte, error),
+	keyDecoder func(k []byte) (int, error),
+	valueDecoder func(v []byte) (int, error),
+) IntIntStream {
+	return s.WriteTo(topicName, keyEncoder, valueEncoder).
+		StreamIntIntTopic(topicName, keyDecoder, valueDecoder)
+}
+
 // Process executes the task and creates a new stream.
 func (s IntIntStream) Process(task func(ch chan IntIntMsg, m IntIntMsg)) IntIntStream {
 	ch := make(chan IntIntMsg, cap(s.ch))

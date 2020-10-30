@@ -1,7 +1,6 @@
 package copy
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -76,7 +75,6 @@ func (s *StreamingApplication) Run(sigchan <-chan os.Signal) error {
 		"client.id":         instanceID,
 
 		// Producer
-		"go.batch.producer":      true,
 		"enable.idempotence":     true,
 		"transaction.timeout.ms": 10_000,
 		"transactional.id":       instanceID,
@@ -477,13 +475,15 @@ func DecodeString(k []byte) (string, error) {
 
 // DecodeInt converts a byte array to a string.
 func DecodeInt(k []byte) (int, error) {
-	var i int
-	err := binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
-	if err != nil {
-		return 0, fmt.Errorf("decode int: %v", err)
+	i, len := binary.Varint(k)
+	if len == 0 {
+		return 0, fmt.Errorf("failed to decode int: byte array to short")
+	}
+	if len < 0 {
+		return 0, fmt.Errorf("failed to decode int: overflow")
 	}
 
-	return i, nil
+	return int(i), nil
 }
 
 // EncodeByteArray casts the ByteArray type alias to a byte array.

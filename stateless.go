@@ -377,6 +377,18 @@ func (s KeyTypeValueTypeStream) WriteTo(topicName string, keyEncoder func(k KeyT
 	return s.app
 }
 
+// Repartition persists the stream into a topic and sorts the messages, based on their key, into partitions.
+func (s KeyTypeValueTypeStream) Repartition(
+	topicName string,
+	keyEncoder func(k KeyType) ([]byte, error),
+	valueEncoder func(v ValueType) ([]byte, error),
+	keyDecoder func(k []byte) (KeyType, error),
+	valueDecoder func(v []byte) (ValueType, error),
+) KeyTypeValueTypeStream {
+	return s.WriteTo(topicName, keyEncoder, valueEncoder).
+		StreamKeyTypeValueTypeTopic(topicName, keyDecoder, valueDecoder)
+}
+
 // Process executes the task and creates a new stream.
 func (s KeyTypeValueTypeStream) Process(task func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg)) KeyTypeValueTypeStream {
 	ch := make(chan KeyTypeValueTypeMsg, cap(s.ch))

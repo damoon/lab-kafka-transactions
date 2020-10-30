@@ -4,14 +4,6 @@
 
 package copy
 
-import (
-	"log"
-	"sync"
-	"time"
-
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-)
-
 // ByteArrayStringStream computes on a stream of key (ByteArray) value (String) messages.
 type ByteArrayStringStream struct {
 	app      *StreamingApplication
@@ -309,73 +301,81 @@ func (s *StreamingApplication) StreamByteArrayStringTopic(topicName string, keyD
 
 // WriteTo persists messages to a kafka topic.
 func (s ByteArrayStringStream) WriteTo(topicName string, keyEncoder func(k ByteArray) ([]byte, error), valueEncoder func(v string) ([]byte, error)) *StreamingApplication {
-	go s.abc(topicName, keyEncoder, valueEncoder)
+
+	retries := 0
+	task := func(m ByteArrayStringMsg) {
+		key, err := keyEncoder(m.Key)
+		if err != nil {
+			log.Fatalf("encode key: key %v: %v", m.Key, err)
+		}
+
+		value, err := valueEncoder(m.Value)
+		if err != nil {
+			log.Fatalf("encode value: value %v: %v", m.Value, err)
+		}
+
+	produce:
+		err = s.app.producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &topicName,
+				Partition: kafka.PartitionAny,
+			},
+			Key:   key,
+			Value: value,
+		}, nil)
+		if err != nil {
+			ke := err.(kafka.Error)
+			if ke.IsFatal() {
+				log.Fatalf("fatal error: produce message: %v", err)
+			}
+
+			if ke.IsRetriable() {
+				time.Sleep(10 * time.Millisecond)
+				goto produce
+			}
+
+			if retries >= 20 {
+				log.Fatalf("produce message: code %d: %v", ke.Code(), ke.Error())
+			}
+
+			time.Sleep(50 * time.Millisecond) // TODO: add exponential back off here
+			retries++
+			goto produce
+		}
+
+		retries = 0
+	}
+
+	go func() {
+		s.app.requiredCommits++
+		for {
+			select {
+			case msg := <-s.ch:
+				task(msg)
+
+			case <-s.commitCh:
+				for len(s.ch) > 0 {
+					msg := <-s.ch
+					task(msg)
+				}
+				s.app.commits <- struct{}{}
+			}
+		}
+	}()
 
 	return s.app
 }
 
-func (s ByteArrayStringStream) abc(topicName string, keyEncoder func(k ByteArray) ([]byte, error), valueEncoder func(v string) ([]byte, error)) {
-	s.app.requiredCommits++
-	for {
-		select {
-		case msg := <-s.ch:
-			s.task(msg, topicName, keyEncoder, valueEncoder)
-
-		case <-s.commitCh:
-			for len(s.ch) > 0 {
-				msg := <-s.ch
-				s.task(msg, topicName, keyEncoder, valueEncoder)
-			}
-			s.app.commits <- struct{}{}
-		}
-	}
-}
-
-func (s ByteArrayStringStream) task(m ByteArrayStringMsg, topicName string, keyEncoder func(k ByteArray) ([]byte, error), valueEncoder func(v string) ([]byte, error)) {
-	retries := 0
-
-	key, err := keyEncoder(m.Key)
-	if err != nil {
-		log.Fatalf("encode key: key %v: %v", m.Key, err)
-	}
-
-	value, err := valueEncoder(m.Value)
-	if err != nil {
-		log.Fatalf("encode value: value %v: %v", m.Value, err)
-	}
-
-	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topicName,
-			Partition: kafka.PartitionAny,
-		},
-		Key:   key,
-		Value: value,
-	}
-
-produce:
-	err = s.app.producer.Produce(msg, nil)
-	if err != nil {
-		ke := err.(kafka.Error)
-		if ke.IsFatal() {
-			log.Fatalf("fatal error: produce message: %v", err)
-		}
-
-		if ke.IsRetriable() {
-			time.Sleep(10 * time.Millisecond)
-			goto produce
-		}
-
-		if retries >= 20 {
-			log.Fatalf("produce message: code %d: %v", ke.Code(), ke.Error())
-		}
-
-		time.Sleep(50 * time.Millisecond)
-		retries++
-		goto produce
-	}
-
-	retries = 0
+// Repartition persists the stream into a topic and sorts the messages, based on their key, into partitions.
+func (s ByteArrayStringStream) Repartition(
+	topicName string,
+	keyEncoder func(k ByteArray) ([]byte, error),
+	valueEncoder func(v string) ([]byte, error),
+	keyDecoder func(k []byte) (ByteArray, error),
+	valueDecoder func(v []byte) (string, error),
+) ByteArrayStringStream {
+	return s.WriteTo(topicName, keyEncoder, valueEncoder).
+		StreamByteArrayStringTopic(topicName, keyDecoder, valueDecoder)
 }
 
 // Process executes the task and creates a new stream.

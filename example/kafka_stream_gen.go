@@ -374,6 +374,18 @@ func (s ByteArrayStringStream) WriteTo(topicName string, keyEncoder func(k ByteA
 	return s.app
 }
 
+// Repartition persists the stream into a topic and sorts the messages, based on their key, into partitions.
+func (s ByteArrayStringStream) Repartition(
+	topicName string,
+	keyEncoder func(k ByteArray) ([]byte, error),
+	valueEncoder func(v string) ([]byte, error),
+	keyDecoder func(k []byte) (ByteArray, error),
+	valueDecoder func(v []byte) (string, error),
+) ByteArrayStringStream {
+	return s.WriteTo(topicName, keyEncoder, valueEncoder).
+		StreamByteArrayStringTopic(topicName, keyDecoder, valueDecoder)
+}
+
 // Process executes the task and creates a new stream.
 func (s ByteArrayStringStream) Process(task func(ch chan ByteArrayStringMsg, m ByteArrayStringMsg)) ByteArrayStringStream {
 	ch := make(chan ByteArrayStringMsg, cap(s.ch))

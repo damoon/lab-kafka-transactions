@@ -374,6 +374,18 @@ func (s StringProductStream) WriteTo(topicName string, keyEncoder func(k string)
 	return s.app
 }
 
+// Repartition persists the stream into a topic and sorts the messages, based on their key, into partitions.
+func (s StringProductStream) Repartition(
+	topicName string,
+	keyEncoder func(k string) ([]byte, error),
+	valueEncoder func(v *Product) ([]byte, error),
+	keyDecoder func(k []byte) (string, error),
+	valueDecoder func(v []byte) (*Product, error),
+) StringProductStream {
+	return s.WriteTo(topicName, keyEncoder, valueEncoder).
+		StreamStringProductTopic(topicName, keyDecoder, valueDecoder)
+}
+
 // Process executes the task and creates a new stream.
 func (s StringProductStream) Process(task func(ch chan StringProductMsg, m StringProductMsg)) StringProductStream {
 	ch := make(chan StringProductMsg, cap(s.ch))
