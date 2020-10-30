@@ -37,3 +37,9 @@ consume-3:
 
 consume-4:
 	go run consumer/main.go 127.0.0.1:9092 group1 host4 topic2
+
+eos-prepare:
+	go run eos-int-producer/main.go 127.0.0.1:9092 topic1
+
+eos-verify:
+	go run eos-int-verifier/main.go 127.0.0.1:9092 topic1

@@ -6,34 +6,23 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	streams "github.com/damoon/lab-kafka-transactions"
 )
 
 func main() {
-	if len(os.Args) < 5 {
-		log.Fatalf("%s <broker> <group> <hostname> <topics..>\n", os.Args[0])
+	if len(os.Args) != 3 {
+		log.Fatalf("%s <broker> <topic>\n", os.Args[0])
 	}
 
 	broker := os.Args[1]
-	group := os.Args[2]
-	hostname := os.Args[3]
-	topics := os.Args[4:]
+	topic := os.Args[2]
+	instanceID := fmt.Sprintf("verify-%d", os.Getpid())
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
 	var err error
-
-	if hostname == "" {
-		hostname, err = os.Hostname()
-		if err != nil {
-			log.Fatalf("look up hostname: %v\n", err)
-		}
-	}
-
-	groupID := "consumer-" + group
-	instanceID := groupID + "-" + hostname
 
 	cfg := &kafka.ConfigMap{
 		// General
@@ -41,7 +30,7 @@ func main() {
 		"client.id":         instanceID,
 
 		// Consumer
-		"group.id":                        groupID,
+		"group.id":                        instanceID,
 		"group.instance.id":               instanceID,
 		"go.application.rebalance.enable": true,
 		"enable.partition.eof":            true,
@@ -52,19 +41,19 @@ func main() {
 	}
 
 	c, err := kafka.NewConsumer(cfg)
-
 	if err != nil {
 		log.Fatalf("create consumer: %v\n", err)
 	}
 
-	err = c.SubscribeTopics(topics, nil)
+	err = c.Subscribe(topic, nil)
 	if err != nil {
-		log.Fatalf("subscribe to topics %v: %v\n", topics, err)
+		log.Fatalf("subscribe to topic %s: %v\n", topic, err)
 	}
 
-	msgCount := 0
-	msgCountPrev := 0
-	showLog := time.Tick(time.Second)
+	values := map[int32]int{}
+	allValues := map[int]int8{}
+	eof := 0
+	count := 0
 
 	run := true
 	for run {
@@ -74,10 +63,6 @@ func main() {
 			fmt.Printf("signal %v: terminating\n", sig)
 			run = false
 
-		case <-showLog:
-			log.Printf("messages/s %d\n", (msgCount - msgCountPrev))
-			msgCountPrev = msgCount
-
 		default:
 			ev := c.Poll(100)
 			if ev == nil {
@@ -86,13 +71,32 @@ func main() {
 
 			switch e := ev.(type) {
 			case *kafka.Message:
-				msgCount++
+				i, err := streams.DecodeInt(e.Value)
+				if err != nil {
+					log.Fatalf("decode int: %v", err)
+				}
+
+				if values[e.TopicPartition.Partition] >= i {
+					log.Fatalf("got %d before %d", values[e.TopicPartition.Partition], i)
+				}
+				values[e.TopicPartition.Partition] = i
+
+				allValues[i]++
+				count++
+
 			case kafka.AssignedPartitions:
 				log.Printf("%v\n", e)
+
+				for _, parition := range e.Partitions {
+					values[parition.Partition] = -1
+				}
+
 				err := c.Assign(e.Partitions)
 				if err != nil {
 					run = false
 				}
+
+				eof = len(e.Partitions)
 			case kafka.RevokedPartitions:
 				log.Printf("%v\n", e)
 				err := c.Unassign()
@@ -100,7 +104,23 @@ func main() {
 					run = false
 				}
 			case kafka.PartitionEOF:
-				//				log.Printf("%v\n", e)
+				log.Printf("%v\n", e)
+				eof--
+
+				if eof == 0 {
+					log.Printf("all messages a ordered per partition\n")
+					log.Printf("found %d values overall\n", count)
+
+					log.Print("checking all numbers form 0 to 9_999_999 have been send exactly once")
+					for i := 0; i < 10_000_000; i++ {
+						if allValues[i] != 1 {
+							log.Fatalf("value %d found %d times", i, allValues[i])
+						}
+					}
+					log.Println("done")
+					run = false
+				}
+
 			case kafka.Error:
 				log.Printf("error: %v\n", e)
 				if e.IsFatal() {

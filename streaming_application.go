@@ -1,7 +1,6 @@
 package streams
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -476,13 +475,15 @@ func DecodeString(k []byte) (string, error) {
 
 // DecodeInt converts a byte array to a string.
 func DecodeInt(k []byte) (int, error) {
-	var i int
-	err := binary.Read(bytes.NewReader(k), binary.BigEndian, &i)
-	if err != nil {
-		return 0, fmt.Errorf("decode int: %v", err)
+	i, len := binary.Varint(k)
+	if len == 0 {
+		return 0, fmt.Errorf("failed to decode int: byte array to short")
+	}
+	if len < 0 {
+		return 0, fmt.Errorf("failed to decode int: overflow")
 	}
 
-	return i, nil
+	return int(i), nil
 }
 
 // EncodeByteArray casts the ByteArray type alias to a byte array.
