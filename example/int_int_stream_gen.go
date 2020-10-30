@@ -337,6 +337,11 @@ func (s IntIntStream) WriteTo(topicName string, keyEncoder func(k int) ([]byte, 
 				log.Fatalf("fatal error: produce message: %v", err)
 			}
 
+			if ke.IsRetriable() {
+				time.Sleep(10 * time.Millisecond)
+				goto produce
+			}
+
 			if retries >= 20 {
 				log.Fatalf("produce message: code %d: %v", ke.Code(), ke.Error())
 			}

@@ -23,6 +23,9 @@ copy-3:
 copy-4:
 	go run copy/main.go 127.0.0.1:9092 group1 host4 topic2 topic1
 
+copy-stream:
+	go run copy-with-streams/main.go
+
 consume-1:
 	go run consumer/main.go 127.0.0.1:9092 group1 host1 topic2
 
