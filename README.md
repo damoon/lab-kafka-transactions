@@ -22,6 +22,10 @@ https://gitlab.com/utopia-planitia/hetznerctl/-/commit/86f6ebd9a277017404e91e5da
 
 SELECT * FROM https://kafka.apache.org/documentation/streams/developer-guide/dsl-api.html#window-final-results WHERE line LIKE '%Stream%'
 
+https://www.zirous.com/2020/05/20/the-state-of-stateful-kafka-operations/
+
+https://mydeveloperplanet.com/2019/10/30/kafka-streams-joins-explored/
+
 // TODO check out gorename
 // TODO check out mergol
 
@@ -33,8 +37,8 @@ SELECT * FROM https://kafka.apache.org/documentation/streams/developer-guide/dsl
  FlatMap                 KStream → KStream
  FlatMap (values only)   KStream → KStream
  Foreach                 KStream → void
-GroupByKey              KStream → KGroupedStream
-GroupBy                 KStream → KGroupedStream
+ GroupByKey              KStream → KGroupedStream
+ GroupBy                 KStream → KGroupedStream
 Cogroup                 KGroupedStream → CogroupedKStream
  Map                     KStream → KStream
  Map (values only)       KStream → KStream
@@ -42,7 +46,7 @@ Cogroup                 KGroupedStream → CogroupedKStream
  Peek                    KStream → KStream
  Print                   KStream → void
  SelectKey               KStream → KStream
-Repartition             KStream → KStream
+ Repartition             KStream → KStream
 
 ## Stateful transformations
 

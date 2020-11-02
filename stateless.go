@@ -15,11 +15,19 @@ type KeyType generic.Type
 // ValueType is the type for values of messages. This will be replaced by genny.
 type ValueType generic.Type
 
-// KeyTypeValueTypeStream computes on a stream of key (KeyType) value (ValueType) messages.
+// KeyTypeValueTypeStream streams messages with a key (KeyType) and a value (ValueType).
 type KeyTypeValueTypeStream struct {
 	app      *StreamingApplication
 	ch       <-chan KeyTypeValueTypeMsg
 	commitCh <-chan interface{}
+}
+
+// KeyTypeValueTypeGroupedStream routes messages with the same key to the same processing instance.
+type KeyTypeValueTypeGroupedStream struct {
+	app      *StreamingApplication
+	ch       <-chan KeyTypeValueTypeMsg
+	commitCh <-chan interface{}
+	topic    string
 }
 
 // KeyTypeValueTypeMsg is a key value pair send through the computation graph.
@@ -250,7 +258,11 @@ func (s KeyTypeValueTypeStream) SelectKey(k func(m KeyTypeValueTypeMsg) KeyType)
 }
 
 // StreamKeyTypeValueTypeTopic subscribes to a topic and streams its messages.
-func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string, keyDecoder func(k []byte) (KeyType, error), valueDecoder func(v []byte) (ValueType, error)) KeyTypeValueTypeStream {
+func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(
+	topicName string,
+	keyDecoder func(k []byte) (KeyType, error),
+	valueDecoder func(v []byte) (ValueType, error),
+) KeyTypeValueTypeStream {
 	// TODO enforce only one read per topic, because only one offset is stored per stream.
 
 	kafkaMsgCh := make(chan *kafka.Message, channelCap)
@@ -310,9 +322,27 @@ func (s *StreamingApplication) StreamKeyTypeValueTypeTopic(topicName string, key
 	return stream
 }
 
-// WriteTo persists messages to a kafka topic.
-func (s KeyTypeValueTypeStream) WriteTo(topicName string, keyEncoder func(k KeyType) ([]byte, error), valueEncoder func(v ValueType) ([]byte, error)) *StreamingApplication {
+// StreamGroupedKeyTypeValueTypeTopic subscribes to a topic and streams its messages.
+func (s *StreamingApplication) StreamGroupedKeyTypeValueTypeTopic(
+	topicName string,
+	keyDecoder func(k []byte) (KeyType, error),
+	valueDecoder func(v []byte) (ValueType, error),
+) KeyTypeValueTypeGroupedStream {
+	stream := s.StreamKeyTypeValueTypeTopic(topicName, keyDecoder, valueDecoder)
+	return KeyTypeValueTypeGroupedStream{
+		app:      stream.app,
+		ch:       stream.ch,
+		commitCh: stream.commitCh,
+		topic:    topicName,
+	}
+}
 
+// WriteTo persists messages to a kafka topic.
+func (s KeyTypeValueTypeStream) WriteTo(
+	topicName string,
+	keyEncoder func(k KeyType) ([]byte, error),
+	valueEncoder func(v ValueType) ([]byte, error),
+) *StreamingApplication {
 	retries := 0
 	task := func(m KeyTypeValueTypeMsg) {
 		key, err := keyEncoder(m.Key)
@@ -389,9 +419,44 @@ func (s KeyTypeValueTypeStream) Repartition(
 		StreamKeyTypeValueTypeTopic(topicName, keyDecoder, valueDecoder)
 }
 
+// GroupBy maps the messages to calculate new keys and repartitions to a grouped stream.
+func (s KeyTypeValueTypeStream) GroupBy(
+	topicName string,
+	keyMapper func(KeyTypeValueTypeMsg) KeyType,
+	keyEncoder func(k KeyType) ([]byte, error),
+	valueEncoder func(v ValueType) ([]byte, error),
+	keyDecoder func(k []byte) (KeyType, error),
+	valueDecoder func(v []byte) (ValueType, error),
+) KeyTypeValueTypeGroupedStream {
+	mapper := func(m KeyTypeValueTypeMsg) KeyTypeValueTypeMsg {
+		m.Key = keyMapper(m)
+		return m
+	}
+	return s.Map(mapper).GroupByKey(topicName, keyEncoder, valueEncoder, keyDecoder, valueDecoder)
+}
+
+// GroupByKey repartitions to a grouped stream based on the existing key.
+func (s KeyTypeValueTypeStream) GroupByKey(
+	topicName string,
+	keyEncoder func(k KeyType) ([]byte, error),
+	valueEncoder func(v ValueType) ([]byte, error),
+	keyDecoder func(k []byte) (KeyType, error),
+	valueDecoder func(v []byte) (ValueType, error),
+) KeyTypeValueTypeGroupedStream {
+	stream := s.Repartition(topicName, keyEncoder, valueEncoder, keyDecoder, valueDecoder)
+	return KeyTypeValueTypeGroupedStream{
+		app:      stream.app,
+		ch:       stream.ch,
+		commitCh: stream.commitCh,
+		topic:    topicName,
+	}
+}
+
 // Process executes the task and creates a new stream.
-func (s KeyTypeValueTypeStream) Process(task func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg)) KeyTypeValueTypeStream {
-	ch := make(chan KeyTypeValueTypeMsg, cap(s.ch))
+func (s KeyTypeValueTypeStream) Process(
+	task func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg),
+) KeyTypeValueTypeStream {
+	ch := make(chan KeyTypeValueTypeMsg, channelCap)
 	commitCh := make(chan interface{}, 1)
 	stream := KeyTypeValueTypeStream{
 		app:      s.app,
@@ -410,6 +475,59 @@ func (s KeyTypeValueTypeStream) Process(task func(ch chan KeyTypeValueTypeMsg, m
 					msg := <-s.ch
 					task(ch, msg)
 				}
+				commitCh <- struct{}{}
+
+				if !ok {
+					close(ch)
+					close(commitCh)
+					return
+				}
+			}
+		}
+	}()
+
+	return stream
+}
+
+// Process executes the task and creates a new stream.
+func (s KeyTypeValueTypeGroupedStream) Process(
+	task func(ch chan KeyTypeValueTypeMsg, m KeyTypeValueTypeMsg) error,
+	commit func() error,
+) KeyTypeValueTypeStream {
+	ch := make(chan KeyTypeValueTypeMsg, channelCap)
+	commitCh := make(chan interface{}, 1)
+	stream := KeyTypeValueTypeStream{
+		app:      s.app,
+		ch:       ch,
+		commitCh: commitCh,
+	}
+
+	if commit == nil {
+		commit = func() error { return nil }
+	}
+
+	go func() {
+		for {
+			select {
+			case msg := <-s.ch:
+				err := task(ch, msg)
+				if err != nil {
+					log.Fatalf("message processing failed: %v", err)
+				}
+
+			case _, ok := <-s.commitCh:
+				for len(s.ch) > 0 {
+					msg := <-s.ch
+					err := task(ch, msg)
+					if err != nil {
+						log.Fatalf("message processing failed: %v", err)
+					}
+				}
+				err := commit()
+				if err != nil {
+					log.Fatalf("failed to commit batch: %v", err)
+				}
+
 				commitCh <- struct{}{}
 
 				if !ok {

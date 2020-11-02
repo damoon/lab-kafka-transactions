@@ -25,9 +25,11 @@ type ByteArray []byte
 type StreamingApplication struct {
 	applicationName, instance, brokers string
 
-	consumer        *kafka.Consumer
-	producer        *kafka.Producer
-	subscriptions   map[string]topic
+	consumer      *kafka.Consumer
+	producer      *kafka.Producer
+	subscriptions map[string]topic
+	aggregations  map[string]func(partition int32)
+
 	commits         chan interface{}
 	requiredCommits int
 }
@@ -230,6 +232,13 @@ func (s *StreamingApplication) process(sigchan <-chan os.Signal) error {
 					return err
 				}
 				ctx = nil
+
+				for _, partition := range e.Partitions {
+					callback, ok := s.aggregations[*partition.Topic]
+					if ok {
+						callback(partition.Partition)
+					}
+				}
 
 			case kafka.RevokedPartitions:
 				log.Printf("%% %v\n", e)
